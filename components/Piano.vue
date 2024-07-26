@@ -18,7 +18,7 @@
             <v-col cols="2">
                 <v-select
                     v-model="config.instrument_preset"
-                    label="Preset"
+                    label="Instrument Modifier"
                     :items="instrumentPresets"
                     item-title="name"
                     return-object
@@ -40,25 +40,17 @@
                 ></v-select>
             </v-col>
             <v-col cols="2">
-                <v-select
-                    v-model="config.key_display"
-                    label="Key style"
-                    :items="[
-                        { id: 'notes', name: 'Show Notes' },
-                        { id: 'keys', name: 'Show Keybindings' },
-                        { id: 'none', name: 'Blank' },
-                    ]"
-                    item-title="name"
-                    item-value="id"
-                    prepend-inner-icon="mdi-cog"
-                ></v-select>
+                <v-switch
+                    v-model="config.has_velocity"
+                    label="MIDI Velocity"
+                ></v-switch>
             </v-col>
             <v-col cols="2">
                 <v-slider
                     v-model="config.volume"
                     label="Volume"
                     min="0"
-                    max="60"
+                    max="40"
                     :prepend-icon="volumeIcon"
                     @click:prepend="onToggleMute"
                     @update:modelValue="onUpdateVolume"
@@ -74,6 +66,7 @@
                     thumb-label
                 ></v-range-slider>
             </v-col>
+
             <v-col cols="3">
                 <Metronome :volume="config.volume - 30"></Metronome>
             </v-col>
@@ -109,6 +102,7 @@
                 <ConfigDisplay
                     v-model:skin="config.skin"
                     v-model:visualizer="config.visualizer"
+                    v-model:key-display="config.key_display"
                 ></ConfigDisplay>
             </v-col>
             <v-col cols="2">
@@ -205,7 +199,8 @@ export default {
                 instrument_preset: null,
                 key_display: "notes",
                 skin: false,
-                volume: 20,
+                has_velocity: true,
+                volume: 15,
                 octaves: [1, 10],
                 file: null,
                 fileSynths: [],
@@ -356,13 +351,13 @@ export default {
             this.initTone(value, this.config.instrument_preset);
         },
         onKeyDown(e) {
-            const note = MIDI.getKeybindingNote(e.key.toUpperCase());
+            const note = MIDI.getKeybindingNote(e.key);
             if (note) {
                 this.onStartNote(note);
             }
         },
         onKeyUp(e) {
-            const note = MIDI.getKeybindingNote(e.key.toUpperCase());
+            const note = MIDI.getKeybindingNote(e.key);
             if (note) {
                 this.onEndNote(note);
             }
@@ -399,6 +394,8 @@ export default {
             // If we have a physical input then select it by default
             if (this.physicalMidiInputs.length > 0) {
                 this.config.input = this.physicalMidiInputs[0].id;
+            } else {
+                this.config.input = null;
             }
 
             midiAccess.inputs.forEach((entry) => {
@@ -426,6 +423,11 @@ export default {
                 "note name: " + this.noteMap[noteMapIndex] + octave,
                 "velocity: " + velocity
             );*/
+
+            // If velocity is disabled then hard set to 1 for full press
+            if (velocity > 0 && !this.config.has_velocity) {
+                velocity = 1;
+            }
 
             if (!this.activeKeys[note] && velocity > 0) {
                 this.activeKeys[note] = true;

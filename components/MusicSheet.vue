@@ -15,7 +15,9 @@
                 <v-card-text>
                     <v-textarea
                         v-model="sheetText"
+                        label="Music in MusTex format"
                         placeholder="{TEMPO:120} C4 C5 C6 [C4C5C6]"
+                        persistent-placeholder
                     ></v-textarea>
                     <v-progress-linear
                         :model-value="(commandIndex / commands.length) * 100"
@@ -43,7 +45,85 @@
                         @click="onClickStop"
                         >Stop
                     </v-btn>
+                    <v-btn variant="text" @click="showHelp = !showHelp"
+                        >MusTex Help</v-btn
+                    >
                 </v-card-actions>
+                <v-card-text v-if="showHelp" class="note-help">
+                    <p>
+                        <v-table>
+                            <thead>
+                                <tr>
+                                    <th class="text-left">Example</th>
+                                    <th class="text-left">How it sounds</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>{TEMPO:100}</code></td>
+                                    <td>Change the tempo or bpm to 100</td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5</code></td>
+                                    <td>Play the C note of the 5th octave</td>
+                                </tr>
+                                <tr>
+                                    <td><code>C#5</code></td>
+                                    <td>
+                                        Play the C&sharp; note of the 5th octave
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>[C5C6C7]</code></td>
+                                    <td>Play notes together</td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5C6C7</code></td>
+                                    <td>Play notes one after the other</td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5 C6 C7</code></td>
+                                    <td>
+                                        Play notes one after the other with a
+                                        short pause in between
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5|C6|C7</code></td>
+                                    <td>
+                                        Play notes one after the other with a
+                                        long pause in between
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <code>C5&para;<br />C6</code>
+                                    </td>
+                                    <td>
+                                        Paragraph breaks create a medium pause
+                                        in between notes
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5^2</code></td>
+                                    <td>
+                                        Play and hold the C note for twice as
+                                        long. You can go up to
+                                        <code>C5^99</code>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>C5^0.5</code></td>
+                                    <td>
+                                        Play and hold the C note for half as
+                                        long. You can go down to
+                                        <code>C5^0.2</code>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </p>
+                </v-card-text>
             </v-card>
         </v-menu>
     </div>
@@ -61,6 +141,7 @@ export default {
             commandIndex: 0,
             tempo: 100,
             commands: [],
+            showHelp: false,
         };
     },
     computed: {},
@@ -78,11 +159,31 @@ export default {
                     case "note":
                         // console.log("Sending notes ", command.notes);
                         for (const noteCommand of command.notes) {
+                            const modifier = noteCommand.modifier || {
+                                key: null,
+                                value: null,
+                            };
+
+                            let duration = 1;
+
+                            // `^` = Note hold modifier. Make sure the value is a valid number and greater than 0.2
+                            // We have a minimum hold of 20ms
+                            if (
+                                modifier.key === "^" &&
+                                !isNaN(modifier.value)
+                            ) {
+                                duration = modifier.value;
+                            }
+
+                            // Normalize the duration from 0.2 to 99
+                            duration = duration >= 0.2 ? duration : 0.2;
+                            duration = duration <= 99 ? duration : 99;
+
                             this.$emit("note:start", noteCommand.note);
                             // Hold the note for 100ms
                             setTimeout(() => {
                                 this.$emit("note:end", noteCommand.note);
-                            }, 100 * noteCommand.duration);
+                            }, 100 * duration);
                         }
                         break;
                     case "pause":
@@ -116,42 +217,67 @@ export default {
         parseSheet() {
             this.commands = [];
             this.commandIndex = 0;
+
+            // Sheet parsing regex for various allowed commands
+            const regex = {
+                command: `(?<command>{.*?})`,
+                chord: `(?<chord>\\[(?:[A-G]#?[0-9][0-9]?(?:\\^[0-9\\.]+)?)+\\])`,
+                pause: `(?<pause>\\|)`,
+                note: `(?<note>[A-G]#?[0-9][0-9]?)`,
+                noteModifier: `(?<modifier>(?<modifier_key>[\\^\\+\\-])(?<modifier_value>[0-9\\.]+))?`,
+                flags: `gi`,
+            };
+
+            const exp = new RegExp(
+                `${regex.command}|${regex.chord}|${regex.pause}|${regex.note}${regex.noteModifier}`,
+                regex.flags
+            );
+
             // Parse the notes
             // Convert all spaces into a pause character aka `|`
             const commands = this.sheetText
                 .trim()
-                .replaceAll(/\n/gi, "")
-                .replaceAll(/\s/gi, "|")
-                .matchAll(
-                    /(?<command>{.*?})|(?<chord>\[(?:[A-G]#?[0-9][0-9]?(?:\^[0-9]+)?)+\])|(?<pause>\|)|(?<note>[A-G]#?[0-9][0-9]?)(?<duration>\^[0-9]+)?/gi
-                );
+                .replaceAll(/\|/gi, "|||") // Convert pause characters to a long pause aka triple beat pause
+                .replaceAll(/\s/gi, "|") // Convert spaces to single short pause characters
+                .replaceAll(/\n/gi, "||") // Convert newlines to a medium pause aka double beat pause
+                .matchAll(exp);
 
             //console.log("commands", commands);
             for (const command of commands) {
                 if (command.groups.chord) {
+                    const noteExp = new RegExp(
+                        `${regex.note}${regex.noteModifier}`,
+                        regex.flags
+                    );
                     const chordNotes = command.groups.chord.matchAll(
-                        /(?<note>[A-G]#?[0-9][0-9]?)(?<duration>\^[0-9]+)?/gi
+                        noteExp,
+                        regex.flags
                     );
 
                     const notes = [];
 
                     for (const chordNote of chordNotes) {
-                        const duration = chordNote.groups.duration || "^1";
                         notes.push({
                             note: chordNote.groups.note,
-                            duration: duration.substr(1),
+                            modifier: {
+                                key: chordNote.groups.modifier_key || null,
+                                value: chordNote.groups.modifier_value || null,
+                            },
                         });
                     }
 
                     this.commands.push({ type: "note", notes: notes });
                 } else if (command.groups.note) {
-                    const duration = command.groups.duration || "^1";
                     this.commands.push({
                         type: "note",
                         notes: [
                             {
                                 note: command.groups.note,
-                                duration: duration.substr(1),
+                                modifier: {
+                                    key: command.groups.modifier_key || null,
+                                    value:
+                                        command.groups.modifier_value || null,
+                                },
                             },
                         ],
                     });
@@ -215,3 +341,11 @@ export default {
     },
 };
 </script>
+
+<style lang="scss" scoped>
+.note-help {
+    max-height: 200px;
+    overflow: hidden;
+    overflow-y: scroll;
+}
+</style>

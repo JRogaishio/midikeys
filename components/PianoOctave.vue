@@ -27,7 +27,10 @@
                 @touchend="onMouseUp(note)"
             >
                 <div class="note-label">
-                    {{ noteLabel(note) }}
+                    <span v-if="showOctave" class="note-label--octave">{{
+                        octave
+                    }}</span>
+                    <span class="note-label--label">{{ noteLabel(note) }}</span>
                 </div>
             </div>
         </div>
@@ -76,11 +79,24 @@ export default {
                 ";"
             );
         },
+        showOctave() {
+            return (
+                this.keyStyle === "key_octaves" ||
+                this.keyStyle === "note_octaves" ||
+                this.keyStyle === "octaves"
+            );
+        },
         noteLabel() {
             return (note) => {
-                if (this.keyStyle === "keys") {
+                if (
+                    this.keyStyle === "keys" ||
+                    this.keyStyle === "key_octaves"
+                ) {
                     return MIDI.getNoteKeybinding(note + this.octave);
-                } else if (this.keyStyle === "notes") {
+                } else if (
+                    this.keyStyle === "notes" ||
+                    this.keyStyle === "note_octaves"
+                ) {
                     return note;
                 } else {
                     return "";
@@ -168,35 +184,47 @@ export default {
     margin-right: -10px;
 }
 .key--white {
-    border-bottom: 3px inset #ccc;
+    border-bottom: 8px solid #ccc;
     background: #fefefe;
     min-height: 150px;
-    outline: 1px solid #ccc;
+    outline: 2px solid #ccc;
     color: #000;
+
+    .note-label--octave {
+        color: #757575;
+    }
 }
 .key--white:hover {
     background: #f0f0f0;
     transition: background-color 0.2s;
 }
 .key--black {
-    border-bottom: 3px inset #111;
+    border-bottom: 8px solid #111;
     background: #333;
     height: 75px;
-    outline: 1px solid #111;
+    outline: 2px solid #111;
     color: #fff;
+
+    .note-label--octave {
+        color: #9c9c9c;
+    }
 }
 .key--black:hover {
     background: #555;
     transition: background-color 0.2s;
 }
+
+.key--active {
+    transition: background-color 0s;
+    border-bottom-width: 4px;
+}
+
 .key--white.key--active {
     background: #ffe9a8 !important;
-    transition: background-color 0s;
 }
 .key--black.key--active {
     background: #5c4a2d !important;
     height: 80px;
-    transition: background-color 0s;
 }
 .note-label {
     align-self: flex-end;
@@ -205,6 +233,17 @@ export default {
     user-select: none;
     padding-bottom: 5px;
 }
+
+.note-label--octave {
+    display: block;
+    font-size: 10pt;
+}
+
+.note-label--label {
+    display: block;
+    min-height: 1.5em;
+}
+
 .key--active > .note-label {
     padding-bottom: 0px;
 }
